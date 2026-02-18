@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ============================================================
-# VM OVERLAY MANAGER v1.0
+# VM OVERLAY MANAGER v1.0.1
 # Auteur : Lord Zatchi
 # GitHub : https://github.com/LordZatchi/
 # ============================================================
@@ -180,7 +180,7 @@ menu() {
     local vm_dir="$OVERLAY_ROOT/$VM_NAME"
     local cur=$(get_current_root_path)
     clear
-    echo -e "${MAGENTA}${BOLD}=== VM OVERLAY MANAGER v1.0 ===${NC}"
+    echo -e "${MAGENTA}${BOLD}=== VM OVERLAY MANAGER v1.0.1 ===${NC}"
     echo -e "${BOLD}Auteur   : Lord Zatchi (https://github.com/LordZatchi/)${NC}"
     echo -e "----------------------------------------"
     echo -e "VM       : ${BLUE}$VM_NAME${NC} (État: ${YELLOW}$(vm_state)${NC})"
@@ -192,6 +192,7 @@ menu() {
     echo -e " 2) ➕ Créer un overlay"
     echo -e " 3) 🔄 Retour au Default (${GREEN}${DEFAULT_OVERLAY_NAME}${NC})"
     echo -e " 4) 📜 Voir les logs"
+    echo -e " 5) 🗑️  Supprimer un overlay"
     echo -e " i) ⚙️  Reconfigurer la VM actuelle"
     echo -e " v) 🔄 Changer de VM"
     echo -e " q) 🚪 Quitter"
@@ -210,6 +211,27 @@ menu() {
       2) echo -n "Nom de l'overlay : "; read -r n; [[ -n "$n" ]] && qemu-img create -f qcow2 -b "$BASE_IMAGE" -F qcow2 "$vm_dir/$n.qcow2" ;;
       3) switch_overlay "$vm_dir/$DEFAULT_OVERLAY_NAME.qcow2" ;;
       4) echo -e "\n--- LOGS ---"; tail -n 15 "$LOG_FILE"; echo -e "\n${YELLOW}Entrée pour revenir...${NC}"; read -r ;;
+      5)
+        local files=(); while IFS= read -r line; do files+=("$line"); done < <(find "$vm_dir" -maxdepth 1 -name "*.qcow2" 2>/dev/null)
+        echo -e "\n${RED}${BOLD}--- SUPPRESSION ---${NC}"
+        for i in "${!files[@]}"; do echo -e "  $((i+1))) $(basename "${files[$i]}")"; done
+        echo -n "Supprimer quel numéro ? : "; read -r del_sel
+        if [[ -n "$del_sel" && ${files[$((del_sel-1))]+_} ]]; then
+            local to_rm="${files[$((del_sel-1))]}"
+            if [[ "$to_rm" == "$cur" ]]; then
+                echo -e "${RED}Erreur : Impossible de supprimer l'overlay actif !${NC}"
+                sleep 2
+            else
+                echo -n "Confirmer la suppression de $(basename "$to_rm") ? (o/N) : "
+                read -r confirm
+                if [[ "${confirm,,}" == "o" ]]; then
+                    rm -f "$to_rm"
+                    echo -e "${GREEN}Fichier supprimé.${NC}"
+                fi
+                sleep 1
+            fi
+        fi
+        ;;
       i) install_wizard ;;
       v) select_vm_context ;;
       q) exit 0 ;;
