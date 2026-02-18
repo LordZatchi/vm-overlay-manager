@@ -2,10 +2,12 @@
 set -euo pipefail
 
 # ============================================================
-# VM OVERLAY MANAGER v1.0.1
+# VM OVERLAY MANAGER v1.0.2
 # Auteur : Lord Zatchi
-# GitHub : https://github.com/LordZatchi/
+# GitHub : https://github.com/LordZatchi/vm-overlay-manager
 # ============================================================
+
+VERSION="1.0.2"
 
 # --- Définition des Couleurs ---
 RED='\033[0;31m'
@@ -22,12 +24,42 @@ SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 CONF_DIR="/etc/vm-overlay"
 HOOK_FILE="/etc/libvirt/hooks/qemu"
 LOG_FILE="/var/log/vm-overlay.log"
+RAW_URL="https://raw.githubusercontent.com/LordZatchi/vm-overlay-manager/main/vm-overlay.sh"
 
 # --- Initialisation Système ---
 sudo mkdir -p "$CONF_DIR"
 sudo mkdir -p "/etc/libvirt/hooks"
 sudo touch "$LOG_FILE"
 sudo chmod 666 "$LOG_FILE"
+
+# --- Fonctions de Mise à jour ---
+auto_update() {
+    # Vérification rapide si internet est disponible et récupération de la version distante
+    # On met un timeout de 2 secondes pour ne pas bloquer le script si pas de réseau
+    local remote_v
+    remote_v=$(curl --connect-timeout 2 -s "$RAW_URL" | grep -m1 "^VERSION=" | cut -d'"' -f2 || echo "$VERSION")
+
+    if [[ "$remote_v" > "$VERSION" ]]; then
+        echo -e "${MAGENTA}${BOLD}✨ MISE À JOUR DISPONIBLE (v$remote_v)${NC}"
+        echo -e "${CYAN}La version actuelle est la v$VERSION.${NC}"
+        echo -n -e "👉 Voulez-vous mettre à jour et redémarrer le script ? (o/N) : "
+        read -r update_now
+        if [[ "${update_now,,}" == "o" ]]; then
+            echo -e "${BLUE}⏳ Téléchargement de la nouvelle version...${NC}"
+            if curl -s "$RAW_URL" -o "$SCRIPT_PATH.tmp"; then
+                mv "$SCRIPT_PATH.tmp" "$SCRIPT_PATH"
+                chmod +x "$SCRIPT_PATH"
+                echo -e "${GREEN}✅ Mise à jour réussie ! Redémarrage...${NC}"
+                sleep 1
+                exec "$SCRIPT_PATH" "$@" # Relance le script avec les mêmes arguments
+            else
+                echo -e "${RED}❌ Erreur lors du téléchargement.${NC}"
+                rm -f "$SCRIPT_PATH.tmp"
+                sleep 2
+            fi
+        fi
+    fi
+}
 
 # --- Helpers ---
 log_msg() {
@@ -175,12 +207,15 @@ EOF
 }
 
 menu() {
+  # --- AUTO UPDATE CHECK ---
+  auto_update "$@"
+  
   select_vm_context
   while true; do
     local vm_dir="$OVERLAY_ROOT/$VM_NAME"
     local cur=$(get_current_root_path)
     clear
-    echo -e "${MAGENTA}${BOLD}=== VM OVERLAY MANAGER v1.0.1 ===${NC}"
+    echo -e "${MAGENTA}${BOLD}=== VM OVERLAY MANAGER v$VERSION ===${NC}"
     echo -e "${BOLD}Auteur   : Lord Zatchi (https://github.com/LordZatchi/)${NC}"
     echo -e "----------------------------------------"
     echo -e "VM       : ${BLUE}$VM_NAME${NC} (État: ${YELLOW}$(vm_state)${NC})"
@@ -248,5 +283,5 @@ if [[ "${1:-}" == "default" ]]; then
     switch_overlay "$OVERLAY_ROOT/$VM_NAME/$DEFAULT_OVERLAY_NAME.qcow2" "--no-start"
   fi
 else
-  menu
+  menu "$@"
 fi
