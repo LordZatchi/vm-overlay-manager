@@ -34,28 +34,31 @@ sudo chmod 666 "$LOG_FILE"
 
 # --- Fonctions de Mise à jour ---
 auto_update() {
-    # Vérification rapide si internet est disponible et récupération de la version distante
-    # On met un timeout de 2 secondes pour ne pas bloquer le script si pas de réseau
+    # On récupère uniquement le numéro de version propre
     local remote_v
-    remote_v=$(curl --connect-timeout 2 -s "$RAW_URL" | grep -m1 "^VERSION=" | cut -d'"' -f2 || echo "$VERSION")
+    remote_v=$(curl --connect-timeout 2 -s "$RAW_URL" | grep -m1 "^VERSION=" | cut -d'"' -f2 | xargs || echo "$VERSION")
 
-    if [[ "$remote_v" > "$VERSION" ]]; then
-        echo -e "${MAGENTA}${BOLD}✨ MISE À JOUR DISPONIBLE (v$remote_v)${NC}"
-        echo -e "${CYAN}La version actuelle est la v$VERSION.${NC}"
-        echo -n -e "👉 Voulez-vous mettre à jour et redémarrer le script ? (o/N) : "
-        read -r update_now
-        if [[ "${update_now,,}" == "o" ]]; then
-            echo -e "${BLUE}⏳ Téléchargement de la nouvelle version...${NC}"
-            if curl -s "$RAW_URL" -o "$SCRIPT_PATH.tmp"; then
-                mv "$SCRIPT_PATH.tmp" "$SCRIPT_PATH"
-                chmod +x "$SCRIPT_PATH"
-                echo -e "${GREEN}✅ Mise à jour réussie ! Redémarrage...${NC}"
-                sleep 1
-                exec "$SCRIPT_PATH" "$@" # Relance le script avec les mêmes arguments
-            else
-                echo -e "${RED}❌ Erreur lors du téléchargement.${NC}"
-                rm -f "$SCRIPT_PATH.tmp"
-                sleep 2
+    # Comparaison stricte : si remote est différent de local ET non vide
+    if [[ "$remote_v" != "$VERSION" && -n "$remote_v" ]]; then
+        # On vérifie si la version distante est plus récente (tri naturel)
+        if [[ $(echo -e "$VERSION\n$remote_v" | sort -V | tail -n1) == "$remote_v" ]]; then
+            echo -e "${MAGENTA}${BOLD}✨ MISE À JOUR DISPONIBLE (v$remote_v)${NC}"
+            echo -e "${CYAN}La version actuelle est la v$VERSION.${NC}"
+            echo -n -e "👉 Voulez-vous mettre à jour et redémarrer le script ? (o/N) : "
+            read -r update_now
+            if [[ "${update_now,,}" == "o" ]]; then
+                echo -e "${BLUE}⏳ Téléchargement de la nouvelle version...${NC}"
+                if curl -s "$RAW_URL" -o "$SCRIPT_PATH.tmp"; then
+                    mv "$SCRIPT_PATH.tmp" "$SCRIPT_PATH"
+                    chmod +x "$SCRIPT_PATH"
+                    echo -e "${GREEN}✅ Mise à jour réussie ! Redémarrage...${NC}"
+                    sleep 1
+                    exec "$SCRIPT_PATH" "$@"
+                else
+                    echo -e "${RED}❌ Erreur lors du téléchargement.${NC}"
+                    rm -f "$SCRIPT_PATH.tmp"
+                    sleep 2
+                fi
             fi
         fi
     fi
@@ -191,7 +194,7 @@ DEFAULT_OVERLAY_NAME="$DEFAULT_OVERLAY_NAME"
 AUTO_START="$AUTO_START"
 EOF
 
-  # Installation/Mise à jour du Hook
+  # Hook installation
   sudo tee "$HOOK_FILE" >/dev/null <<EOF
 #!/usr/bin/env bash
 domain="\$1"; event="\$2"
@@ -207,7 +210,6 @@ EOF
 }
 
 menu() {
-  # --- AUTO UPDATE CHECK ---
   auto_update "$@"
   
   select_vm_context
