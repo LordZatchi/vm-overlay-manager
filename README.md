@@ -1,52 +1,72 @@
 # 🚀 VM Overlay Manager
 
-> 🧠 Smart QCOW2 Overlay Management for Libvirt / KVM\
-> ⚡ Instant switching • 🔄 Auto-reset • 🛡 Snapshot safety
+> 🧠 Gestion intelligente des overlays QCOW2 pour Libvirt / KVM\
+> ⚡ Switch instantané • 🔄 Reset automatique • 🛡 Snapshots sécurisés •
+> 🆙 Mise à jour automatique
 
 ------------------------------------------------------------------------
 
-## ✨ Why this project exists
+## ✨ Pourquoi ce projet existe
 
-Managing QCOW2 overlays manually in Libvirt can be risky, slow and
-error-prone.
+Gérer manuellement des overlays QCOW2 dans Libvirt peut être risqué,
+lent et source d'erreurs.
 
-VM Overlay Manager provides a clean, safe and fast way to manage
-overlays like a professional.
-
-------------------------------------------------------------------------
-
-## 🔥 Features
-
-### 🖥 Multi-VM Support
-
-Manage multiple virtual machines independently.
-
-### 🔄 Instant Overlay Switching
-
-Switch overlays in seconds without editing XML manually.
-
-### 🛡 Automatic Snapshots
-
-Before any overlay change: - Snapshot is created automatically -
-Rollback remains possible
-
-### 🧹 Auto Reset on Shutdown
-
-When the VM stops: - Automatically switches back to `Default` overlay -
-Keeps production environment clean
-
-### 🧠 Smart Detection
-
--   Detects Libvirt VMs
--   Lists available QCOW2 images dynamically
+**VM Overlay Manager** fournit une méthode propre, sécurisée et rapide
+pour gérer vos overlays comme un professionnel.
 
 ------------------------------------------------------------------------
 
-## 🧩 Overlay Structure
+## 🔥 Fonctionnalités
 
-Base.qcow2 (Clean Backing File) │ ├── Default.qcow2 🟢 Production ├──
-Dev.qcow2 🧪 Testing ├── Sandbox.qcow2 🔬 Experiments └── Temp.qcow2 ⚠
-Risky Stuff
+### 🖥 Support Multi-VM
+
+Gérez plusieurs machines virtuelles indépendamment avec des
+configurations dédiées.
+
+### 🔄 Switch d'Overlay Instantané
+
+Changez d'overlay en quelques secondes sans modifier manuellement les
+fichiers XML.
+
+### 🛡 Snapshots Automatiques
+
+Avant tout changement d'overlay : - Un snapshot est créé
+automatiquement\
+- Un retour arrière reste possible
+
+### 🗑 Suppression Intégrée
+
+Supprimez les overlays inutilisés directement depuis l'interface.\
+🛑 L'overlay actif est protégé contre toute suppression accidentelle.
+
+### 🧹 Reset Automatique à l'Arrêt
+
+Grâce au hook Libvirt : - La VM revient automatiquement sur l'overlay
+`Default` à chaque extinction\
+- L'environnement de production reste propre et stable
+
+### 🆙 Mise à Jour Automatique
+
+À chaque lancement : - Le script vérifie sa version sur GitHub\
+- Détecte si une nouvelle version est disponible\
+- Propose une mise à jour automatique en place
+
+### 🧠 Détection Intelligente
+
+-   Détection automatique des VM Libvirt\
+-   Liste dynamique des images QCOW2 disponibles\
+-   Vérification de la structure des overlays avant switch
+
+------------------------------------------------------------------------
+
+## 🧩 Structure des Overlays
+
+Base.qcow2 (Backing File propre)\
+│\
+├── Default.qcow2 🟢 Production\
+├── Dev.qcow2 🧪 Tests\
+├── Sandbox.qcow2 🔬 Expérimentations\
+└── Temp.qcow2 ⚠ Tests risqués
 
 ------------------------------------------------------------------------
 
@@ -58,61 +78,69 @@ cd vm-overlay-manager
 chmod +x vm-overlay.sh
 ```
 
-Run:
+Lancement :
 
 ``` bash
 ./vm-overlay.sh
 ```
 
-Follow the interactive setup wizard.
+Suivez l'assistant interactif.
 
 ------------------------------------------------------------------------
 
-## 🎮 Usage
+## 🎮 Utilisation
 
 ``` bash
 ./vm-overlay.sh
 ```
 
-Available actions: - 📂 List & switch overlays - ➕ Create new overlay -
-🔄 Force return to Default - 📜 View logs
+Actions disponibles :
+
+-   📂 Lister & changer d'overlay\
+-   ➕ Créer un nouvel overlay\
+-   🗑 Supprimer un overlay en sécurité\
+-   🔄 Forcer le retour à Default\
+-   📜 Consulter les logs\
+-   🆙 Vérifier les mises à jour
 
 ------------------------------------------------------------------------
 
-## 🎯 Use Cases
+## 🎯 Cas d'utilisation
 
--   🧪 Software testing
--   🛠 Windows repair VMs
--   🖥 WinApps environments
--   🔬 Sandbox labs
--   🧱 Disposable VM states
+-   🧪 Tests logiciels\
+-   🛠 VM de réparation Windows\
+-   🖥 Environnements WinApps\
+-   🔬 Lab sandbox\
+-   🧱 États jetables pour expérimentation
 
 ------------------------------------------------------------------------
 
-## 📦 Requirements
+## 📦 Prérequis
 
--   Linux
--   QEMU / KVM
--   Libvirt
--   Bash
--   QCOW2 disk images
+-   Linux\
+-   QEMU / KVM\
+-   Libvirt\
+-   Bash\
+-   Images disque QCOW2\
+-   Connexion Internet (pour la mise à jour automatique)
 
 ------------------------------------------------------------------------
 
 ## 🗺 Roadmap
 
--   [ ] Overlay diff view
--   [ ] Snapshot browser
--   [ ] Fast CLI mode
--   [ ] Optional web interface
+-   [ ] Visualisation des différences entre overlays\
+-   [ ] Navigateur de snapshots\
+-   [ ] Mode CLI rapide\
+-   [ ] Interface web optionnelle
 
 ------------------------------------------------------------------------
 
-## ⚖ License
+## ⚖ Licence
 
-MIT License\
-See `LICENSE` file for details.
+Licence MIT\
+Voir le fichier `LICENSE` pour plus de détails.
 
 ------------------------------------------------------------------------
 
-Built by Lord Zatchi ⚙️
+Projet créé par **LordZatchi** ⚙️\
+Gestion professionnelle des overlays pour environnements VM avancés.
