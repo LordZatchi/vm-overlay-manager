@@ -2,12 +2,12 @@
 set -euo pipefail
 
 # ============================================================
-# VM OVERLAY MANAGER v1.0.2
+# VM OVERLAY MANAGER v1.0.3
 # Auteur : Lord Zatchi
 # GitHub : https://github.com/LordZatchi/vm-overlay-manager
 # ============================================================
 
-VERSION="1.0.2"
+VERSION="1.0.3"
 
 # --- Définition des Couleurs ---
 RED='\033[0;31m'
@@ -70,11 +70,52 @@ log_msg() {
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] $msg" | sudo tee -a "$LOG_FILE" >/dev/null 2>&1 || true
 }
 
-vm_state() { virsh domstate "$VM_NAME" 2>/dev/null || echo "offline"; }
-get_root_target() { virsh domblklist "$VM_NAME" --details 2>/dev/null | awk '$1=="file" && $2=="disk"{print $3; exit}'; }
+detect_vm_uri() {
+  local vm_name="${1:-}"
+  local uri
+  for uri in qemu:///system qemu:///session; do
+    if virsh -c "$uri" dominfo "$vm_name" >/dev/null 2>&1; then
+      echo "$uri"
+      return 0
+    fi
+  done
+  return 1
+}
+
+virsh_cmd() {
+  local uri="${LIBVIRT_URI:-}"
+  if [[ -z "$uri" && -n "${VM_NAME:-}" ]]; then
+    uri="$(detect_vm_uri "$VM_NAME" || true)"
+  fi
+  [[ -z "$uri" ]] && uri="qemu:///system"
+  virsh -c "$uri" "$@"
+}
+
+list_all_vms() {
+  local uri line
+  for uri in qemu:///system qemu:///session; do
+    while IFS= read -r line; do
+      [[ -n "$line" ]] && printf '%s|%s\n' "$uri" "$line"
+    done < <(virsh -c "$uri" list --all --name 2>/dev/null | grep -v '^$' || true)
+  done
+}
+
+vm_state() {
+  virsh_cmd domstate "$VM_NAME" 2>/dev/null || echo "offline"
+  return 0
+}
+get_root_target() {
+  virsh_cmd domblklist "$VM_NAME" --details 2>/dev/null | awk '$1=="file" && $2=="disk" && $3!="" {print $3; exit}' || true
+  return 0
+}
 get_current_root_path() {
-  local tgt; tgt="$(get_root_target)"
-  [[ -n "$tgt" ]] && virsh domblklist "$VM_NAME" --details 2>/dev/null | awk -v t="$tgt" '$3==t {print $4; exit}'
+  local tgt
+  tgt="$(get_root_target || true)"
+  if [[ -z "$tgt" ]]; then
+    return 0
+  fi
+  virsh_cmd domblklist "$VM_NAME" --details 2>/dev/null | awk -v t="$tgt" '$3==t {print $4; exit}' || true
+  return 0
 }
 
 # --- Gestion Multi-VM ---
@@ -90,7 +131,8 @@ select_vm_context() {
   local i=1
   local vm_list=()
   for conf in "${configs[@]}"; do
-    local name=$(basename "$conf" .conf)
+    local name
+    name=$(basename "$conf" .conf)
     vm_list+=("$name")
     echo -e "  $i) $name"
     ((i++))
@@ -108,6 +150,10 @@ select_vm_context() {
     remove_vm_wizard
   elif [[ "$choice" =~ ^[0-9]+$ ]] && ((choice > 0 && choice < i)); then
     source "$CONF_DIR/${vm_list[$((choice-1))]}.conf"
+    if [[ -z "${LIBVIRT_URI:-}" ]]; then
+      LIBVIRT_URI="$(detect_vm_uri "$VM_NAME" || true)"
+      [[ -z "${LIBVIRT_URI:-}" ]] && LIBVIRT_URI="qemu:///system"
+    fi
   else
     echo -e "${RED}Choix invalide.${NC}"
     exit 1
@@ -135,7 +181,8 @@ remove_vm_wizard() {
 # --- Coeur du Script ---
 switch_overlay() {
   local full_path="$1" manual_no_start="${2:-}"
-  local state=$(vm_state)
+  local state
+  state=$(vm_state)
   
   if [[ "$state" == "running" || "$state" == "paused" ]]; then
       echo -e "\n${YELLOW}⚠️ La VM '$VM_NAME' est active.${NC}"
@@ -143,25 +190,32 @@ switch_overlay() {
       read -r confirm
       if [[ "${confirm,,}" == "o" ]]; then
           echo -n "⏳ Arrêt en cours..."
-          virsh shutdown "$VM_NAME" >/dev/null 2>&1
+          virsh_cmd shutdown "$VM_NAME" >/dev/null 2>&1
           while [[ "$(vm_state)" != "shut off" ]]; do sleep 1; echo -n "."; done
           echo -e " ${GREEN}OK.${NC}"
       else return 1; fi
   fi
 
-  local target=$(get_root_target)
-  virsh detach-disk "$VM_NAME" "$target" --persistent >/dev/null 2>&1 || true
-  virsh attach-disk "$VM_NAME" "$full_path" "$target" --persistent --subdriver qcow2 --targetbus virtio >/dev/null
+  local target
+  target=$(get_root_target)
+  if [[ -z "$target" ]]; then
+  echo -e "${RED}❌ Impossible de détecter la cible disque principale de la VM ($VM_NAME).${NC}"
+  echo -e "${YELLOW}Vérifie la sortie de : virsh -c ${LIBVIRT_URI:-qemu:///system} domblklist \"$VM_NAME\" --details${NC}"
+  sleep 2
+  return 1
+  fi
+  virsh_cmd detach-disk "$VM_NAME" "$target" --persistent >/dev/null 2>&1 || true
+  virsh_cmd attach-disk "$VM_NAME" "$full_path" "$target" --persistent --subdriver qcow2 --targetbus virtio >/dev/null
   
   log_msg "VM $VM_NAME switched to $(basename "$full_path")"
   
   if [[ "$manual_no_start" != "--no-start" ]]; then
       if [[ "${AUTO_START:-0}" == "1" ]]; then 
-          virsh start "$VM_NAME" >/dev/null 2>&1
+          virsh_cmd start "$VM_NAME" >/dev/null 2>&1
       else
           echo -n -e "\n▶️ Démarrer la VM maintenant ? (o/N) : "
           read -r sn
-          [[ "${sn,,}" == "o" ]] && virsh start "$VM_NAME" >/dev/null 2>&1
+          [[ "${sn,,}" == "o" ]] && virsh_cmd start "$VM_NAME" >/dev/null 2>&1
       fi
   fi
 }
@@ -170,17 +224,79 @@ install_wizard() {
   clear
   echo -e "${BOLD}=== Assistant d'ajout de VM (Lord Zatchi) ===${NC}"
   
-  local vms=(); while IFS= read -r line; do vms+=("$line"); done < <(virsh list --all --name | grep -v '^$')
-  for i in "${!vms[@]}"; do echo -e "  $((i+1))) ${vms[$i]}"; done
-  echo -n "Choisir la VM [1] : "; read -r v; v="${v:-1}"; VM_NAME="${vms[$((v-1))]}"
+  local vm_entries=()
+  local vm_names=()
+  local vm_uris=()
+  local line uri name
 
-  local bases=(); while IFS= read -r line; do bases+=("$line"); done < <(sudo find /var/lib/libvirt/images /vm -maxdepth 2 -name "*.qcow2" -not -path "*/overlays/*" 2>/dev/null)
-  for i in "${!bases[@]}"; do echo -e "  $((i+1))) ${bases[$i]}"; done
-  echo -n "Base Image [1] : "; read -r b; b="${b:-1}"; BASE_IMAGE="${bases[$((b-1))]}"
+  while IFS= read -r line; do
+    vm_entries+=("$line")
+  done < <(list_all_vms)
 
-  echo -n "Dossier Overlays [/vm/overlays] : "; read -r r; OVERLAY_ROOT="${r:-/vm/overlays}"
-  echo -n "Nom Default [prod] : "; read -r p; DEFAULT_OVERLAY_NAME="${p:-prod}"
-  echo -n "Auto-start après switch (1/0) [0] : "; read -r a; AUTO_START="${a:-0}"
+  if [[ ${#vm_entries[@]} -eq 0 ]]; then
+    echo -e "${RED}❌ Aucune VM détectée via libvirt (system/session).${NC}"
+    exit 1
+  fi
+
+  for i in "${!vm_entries[@]}"; do
+    uri="${vm_entries[$i]%%|*}"
+    name="${vm_entries[$i]#*|}"
+    vm_uris+=("$uri")
+    vm_names+=("$name")
+    echo -e "  $((i+1))) ${name} ${CYAN}[${uri}]${NC}"
+  done
+
+  echo -n "Choisir la VM [1] : "
+  read -r v
+  v="${v:-1}"
+  VM_NAME="${vm_names[$((v-1))]}"
+  LIBVIRT_URI="${vm_uris[$((v-1))]}"
+
+  BASE_IMAGE="$(virsh_cmd domblklist "$VM_NAME" --details 2>/dev/null | awk '$1=="file" && $2=="disk"{print $4; exit}' || true)"
+
+  if [[ -z "$BASE_IMAGE" ]]; then
+    echo -e "${YELLOW}⚠ Impossible de détecter automatiquement le disque principal.${NC}"
+    echo -e "${CYAN}Recherche manuelle des fichiers .qcow2 / .img...${NC}"
+
+    local bases=()
+    while IFS= read -r line; do
+      bases+=("$line")
+    done < <(sudo find / -type f \( -name "*.qcow2" -o -name "*.img" \) \
+      -not -path "/proc/*" \
+      -not -path "/sys/*" \
+      -not -path "/dev/*" \
+      -not -path "/run/*" \
+      -not -path "/tmp/*" \
+      -not -path "*/overlays/*" 2>/dev/null)
+
+    if [[ ${#bases[@]} -eq 0 ]]; then
+      echo -e "${RED}❌ Aucun disque qcow2/img trouvé sur le système.${NC}"
+      exit 1
+    fi
+
+    for i in "${!bases[@]}"; do
+      echo -e "  $((i+1))) ${bases[$i]}"
+    done
+
+    echo -n "Base Image [1] : "
+    read -r b
+    b="${b:-1}"
+    BASE_IMAGE="${bases[$((b-1))]}"
+  else
+    echo -e "Base détectée automatiquement : ${BLUE}$BASE_IMAGE${NC}"
+  fi
+
+  echo -n "Dossier Overlays [/vm/overlays] : "
+  read -r r
+  OVERLAY_ROOT="${r:-/vm/overlays}"
+
+  echo -n "Nom Default [prod] : "
+  read -r p
+  DEFAULT_OVERLAY_NAME="${p:-prod}"
+
+  echo -n "Auto-start après switch (1/0) [0] : "
+  read -r a
+  AUTO_START="${a:-0}"
 
   local vm_dir="$OVERLAY_ROOT/$VM_NAME"
   mkdir -p "$vm_dir"
@@ -188,6 +304,7 @@ install_wizard() {
 
   sudo tee "$CONF_DIR/$VM_NAME.conf" >/dev/null <<EOF
 VM_NAME="$VM_NAME"
+LIBVIRT_URI="$LIBVIRT_URI"
 BASE_IMAGE="$BASE_IMAGE"
 OVERLAY_ROOT="$OVERLAY_ROOT"
 DEFAULT_OVERLAY_NAME="$DEFAULT_OVERLAY_NAME"
@@ -204,7 +321,7 @@ fi
 exit 0
 EOF
   sudo chmod +x "$HOOK_FILE" "$SCRIPT_PATH"
-  sudo systemctl restart libvirtd >/dev/null 2>&1 || true
+  sudo systemctl reload libvirtd >/dev/null 2>&1 || true
   echo -e "\n✅ VM $VM_NAME configurée avec succès."
   sleep 1
 }
@@ -215,12 +332,14 @@ menu() {
   select_vm_context
   while true; do
     local vm_dir="$OVERLAY_ROOT/$VM_NAME"
-    local cur=$(get_current_root_path)
+    local cur
+    cur=$(get_current_root_path)
     clear
     echo -e "${MAGENTA}${BOLD}=== VM OVERLAY MANAGER v$VERSION ===${NC}"
     echo -e "${BOLD}Auteur   : Lord Zatchi (https://github.com/LordZatchi/)${NC}"
     echo -e "----------------------------------------"
     echo -e "VM       : ${BLUE}$VM_NAME${NC} (État: ${YELLOW}$(vm_state)${NC})"
+    echo -e "URI      : ${CYAN}${LIBVIRT_URI:-N/A}${NC}"
     echo -e "Base     : ${CYAN}$BASE_IMAGE${NC}"
     echo -e "Actif    : ${GREEN}$(basename "${cur:-N/A}")${NC}"
     echo -e "Dossier  : $vm_dir"
@@ -240,8 +359,10 @@ menu() {
         local files=(); while IFS= read -r line; do files+=("$line"); done < <(find "$vm_dir" -maxdepth 1 -name "*.qcow2" 2>/dev/null)
         if [[ ${#files[@]} -eq 0 ]]; then echo "Aucun overlay."; sleep 1; continue; fi
         for i in "${!files[@]}"; do
-            local fn=$(basename "${files[$i]}")
-            local s=""; [[ "${fn%.qcow2}" == "$DEFAULT_OVERLAY_NAME" ]] && s=" ${GREEN}[DEFAULT]${NC}"
+            local fn
+            fn=$(basename "${files[$i]}")
+            local s=""
+            [[ "${fn%.qcow2}" == "$DEFAULT_OVERLAY_NAME" ]] && s=" ${GREEN}[DEFAULT]${NC}"
             echo -e "  $((i+1))) $(printf "%-20s" "$fn") $s"
         done
         echo -n "Choix [1] : "; read -r sel; sel="${sel:-1}"; switch_overlay "${files[$((sel-1))]}" ;;
@@ -282,6 +403,10 @@ if [[ "${1:-}" == "default" ]]; then
   VM_NAME="${2:-}"
   if [[ -f "$CONF_DIR/$VM_NAME.conf" ]]; then
     source "$CONF_DIR/$VM_NAME.conf"
+    if [[ -z "${LIBVIRT_URI:-}" ]]; then
+      LIBVIRT_URI="$(detect_vm_uri "$VM_NAME" || true)"
+      [[ -z "${LIBVIRT_URI:-}" ]] && LIBVIRT_URI="qemu:///system"
+    fi
     switch_overlay "$OVERLAY_ROOT/$VM_NAME/$DEFAULT_OVERLAY_NAME.qcow2" "--no-start"
   fi
 else
