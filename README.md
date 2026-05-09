@@ -132,6 +132,7 @@ Actions disponibles :
 -   [ ] Navigateur de snapshots\
 -   [ ] Mode CLI rapide\
 -   [ ] Interface web optionnelle
+-   [ ] Migration facile des VMs
 
 ------------------------------------------------------------------------
 
